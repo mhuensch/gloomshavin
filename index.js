@@ -1,3 +1,8 @@
+const conditions = require('./src/conditions')
+const keywords = require('./src/keywords')
+const stalker = require('./src/stalker')
+const characters = require('./src/characters')
+
 const pdfreader = require('pdfreader')
 function load (file) {
   return new Promise((resolve, reject) => {
@@ -37,35 +42,6 @@ function getValue (segments) {
 }
 
 function getAbilities (segments) {
-  const conditions =
-    [ 'INVISIBLE'
-    , 'PUSH'
-    , 'MUDDLE'
-    , 'POISON'
-    , 'STUN'
-    , 'DISARM'
-    , 'CURSE'
-    , 'IMMOBILIZE'
-    , 'STRENGTHEN'
-    ]
-
-  const keywords =
-    [ 'Move'
-    , 'Attack'
-    , 'Range'
-    , 'Heal'
-    , 'Shield'
-    , 'Loot'
-    , 'Retaliate'
-    , 'Target'
-    , 'Self'
-    , 'Allies'
-    , 'Jump'
-    , 'Summon'
-    , 'Augment'
-    , 'XP'
-    ]
-
   // Sort the segments as they appear on the card, not their default order.
   segments.sort((a, b) => a.y - b.y ? a.y - b.y : a.x - b.x)
   
@@ -92,16 +68,18 @@ function getAbilities (segments) {
     
     let condition = conditions.find(condition => text.indexOf(condition) > -1)
     if (condition && abilities.conditions.indexOf(condition) === -1) {
-      abilities.conditions.push(condition)
+      abilities.conditions.push(condition.toLowerCase())
     }
     
     let keyword = keywords.find(word => text.indexOf(word) > -1)
     if (keyword) {
-      if (abilities.keywords.indexOf(keyword) === -1) abilities.keywords.push(keyword)
+      if (abilities.keywords.indexOf(keyword) === -1) {
+        abilities.keywords.push(keyword.toLowerCase())
+      }
       
       let regex = new RegExp(`.*?${keyword} ([0-9]+).*?`, 'i')
       let value = parseInt((text.match(regex)||[])[1]) || null
-      if (value) abilities[keyword] = value
+      if (value) abilities[keyword.toLowerCase()] = value
     }
   })
 
@@ -113,7 +91,6 @@ function findValue (text, term) {
   return parseInt((text.match(regex)||[])[1]) || null
 }
 
-
 (async () => {
   const TITLE_YPOS = 0.3320000000000001
   const LEVEL_YPOS = 1.221
@@ -123,21 +100,12 @@ function findValue (text, term) {
   const ATTACK_YPOS = 7.42
   const MOVE_YPOS = 8.437
   
-  const characters =
-    [ { pdf: './pdfs/MT Cards.pdf'
-      , name: 'Mindthief'
-      }
-    // , { pdf: './pdfs/SC Cards.pdf'
-    //   , name: 'Scoundrel'
-    //   }
-    // , { pdf: './pdfs/CH Cards.pdf'
-    //   , name: 'Cragheart'
-    //   }
-    ]
+  const characters = require('./src/characters')
+
   
   // Load all the data from the character card pdf files
   const characterData = await Promise.all(characters.map(async character => {
-    return await load(character.pdf)
+    return await load(`./pdfs/${character.key} Cards.pdf`)
   }))
 
   // Loop through each character that we've loaded and build a complete deck of cards.
@@ -145,23 +113,23 @@ function findValue (text, term) {
     // At this point, we have a bunch of text data for a single character.
     // and that data is spread across a bunch lines and sections.
     // So we'll start to group that data by the individual cards.
-    let currentPage = null
+    let card = {}
+    cards.push(card)
     character.forEach(item => {
       // Set the current page and skip it if the page is null.
       // This happens when the pdf contains a header that isn't a card.
       // As every other page is a blank card back, we'll also skip the even pages.
       // When we skip a record, we'll add a new object to prepare for the next card's index calc.
-      currentPage = item.page || currentPage
-      if (currentPage == null || currentPage % 2 === 0) {
-        cards.push({})
+      card.page = item.page || card.page
+      if (card.page % 2 === 0) {
+        card = {}
+        cards.push(card)
         return cards
       }
       
       // Now that we have a current page, we need to calculate the index of the card
       // by taking the current page and subtracting the number of cards. This is necessary
       // Because we are skipping cards and processing multiple characters.
-      let id = currentPage - cards.length
-      let card = cards[id]
       card.character = characters[index].name
       card.segments = card.segments || []
       card.segments.push(item)
@@ -170,14 +138,15 @@ function findValue (text, term) {
     return cards
   }, [])
   
-  // Each character sheet loop creates an extra record at the end,
-  // so remove the empty record
-  cards.pop()
+  // At this point, some cards might not have text segments,
+  // so remove any extra card records
+  cards = cards.filter(card => card.segments != null && card.segments.length > 0)
+  // Do the same for segments without text.
+  cards.forEach(card => card.segments = card.segments.filter(segment => segment.text != null))
   
-  // Each character's card has it's own data, but we still need to parse that data
+  // Each character's card now has it's own data, but we still need to parse that data
   // so we'll loop through each card and parse out the segments where appropriate
-  cards.forEach(card => {
-
+  await Promise.all(cards.map(async card => {
     let shave = shaveArray.bind(card.segments)
     shave(segment => segment.height > 0 && segment.width > 0)
     shave(segment => segment.y === ATTACK_YPOS)
@@ -191,17 +160,25 @@ function findValue (text, term) {
     card.initiative = getValue(shave(segment => segment.y === INIT_YPOS))
 
     card.character = character
+    card.characterKey = characters.find(c => c.name === character).key
     card.level = getValue(shave(segment => segment.y === LEVEL_YPOS))
 
     card.top = getAbilities(shave(segment => segment.y < MIDPOINT_YPOS))
     card.bottom = getAbilities(shave(segment => segment.y > MIDPOINT_YPOS))
-    
+
+    let icons = await stalker.findIcons(card)
+    icons.forEach(icon => {
+      card[icon.half][icon.type] = true
+      card[icon.half].keywords.push(icon.type)
+    })
+
     if (card.segments.length > 0) console.warn('UNUSED', card.segments)
     delete card.segments
-  })
-  
-  // console.log(cards.find(card => card.id === '117'))
-  console.log(cards.find(card => card.id === '117'))
+    delete card.page
+  }))
+
+  console.log(cards.find(card => card.title === 'Unstoppable Charge'))
+  // cards.forEach(card => console.log(card))
 })()
 
 
