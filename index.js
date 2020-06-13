@@ -67,13 +67,13 @@ function getAbilities (segments) {
     }, '')
     
     let condition = conditions.find(condition => text.indexOf(condition) > -1)
-    if (condition && abilities.conditions.indexOf(condition) === -1) {
+    if (condition && abilities.conditions.indexOf(condition.toLowerCase()) === -1) {
       abilities.conditions.push(condition.toLowerCase())
     }
     
     let keyword = keywords.find(word => text.indexOf(word) > -1)
     if (keyword) {
-      if (abilities.keywords.indexOf(keyword) === -1) {
+      if (abilities.keywords.indexOf(keyword.toLowerCase()) === -1) {
         abilities.keywords.push(keyword.toLowerCase())
       }
       
@@ -169,7 +169,9 @@ function findValue (text, term) {
     let icons = await stalker.findIcons(card)
     icons.forEach(icon => {
       card[icon.half][icon.type] = true
-      card[icon.half].keywords.push(icon.type)
+      if (card[icon.half].keywords.indexOf(icon.type) === -1){
+        card[icon.half].keywords.push(icon.type)
+      }
     })
 
     if (card.segments.length > 0) console.warn('UNUSED', card.segments)
@@ -177,8 +179,8 @@ function findValue (text, term) {
     delete card.page
   }))
 
-  console.log(cards.find(card => card.title === 'Unstoppable Charge'))
-  // cards.forEach(card => console.log(card))
+  // console.log(cards.find(card => card.title === 'Unstoppable Charge'))
+  cards.forEach(card => console.log(card))
 })()
 
 

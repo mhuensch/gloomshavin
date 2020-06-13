@@ -26,6 +26,20 @@ async function crop (cardBuffer, location) {
 }
 
 async function find (cardBuffer, stencil) {
+  // let checkpoints = [...Array(6).keys()].splice(1)
+  // const locations = stencil.locations.reduce((locations, location) => {
+  //   locations.push(location)
+  //   checkpoints.forEach(point => {
+  //     locations.push({ left: location.left + point, top: location.top })
+  //     locations.push({ left: location.left - point, top: location.top })
+  //     locations.push({ left: location.left, top: location.top + point })
+  //     locations.push({ left: location.left, top: location.top - point })
+  //     locations.push({ left: location.left + point, top: location.top + point })
+  //     locations.push({ left: location.left - point, top: location.top - point })
+  //   })
+  //   return locations
+  // }, [])
+  
   const matches = await Promise.all(stencil.locations.map(async location => {
     let config = 
       { width: stencil.width
@@ -33,11 +47,12 @@ async function find (cardBuffer, stencil) {
       , top: location.top
       , left: location.left
       }
-
+    
+    const pixles = stencil.width * stencil.height
     const cropped = await crop(cardBuffer, config)
     const diff = (new PNG(config))
     const numDiffPixels = pixelmatch(cropped, stencil.data, diff.data, config.width, config.height)
-    if (numDiffPixels === 0) return true
+    if (numDiffPixels < pixles * 0.33) return true
     return false
   }))
   
